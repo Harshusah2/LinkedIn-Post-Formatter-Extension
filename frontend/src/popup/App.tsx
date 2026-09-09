@@ -76,15 +76,24 @@ export function App() {
     void loadComposerText();
   }, []);
 
-  // Listen for text from LinkedIn content script iframe
+  // Listen for text from LinkedIn content script iframe and insertion results
   useEffect(() => {
-    const receiveComposerText = (event: MessageEvent<{ type?: string; text?: string }>) => {
+    const handleWindowMessage = (
+      event: MessageEvent<{ type?: string; text?: string; success?: boolean; error?: string }>
+    ) => {
       if (event.data?.type === 'composer-text' && typeof event.data.text === 'string' && event.data.text.trim()) {
         setText(event.data.text);
       }
+      if (event.data?.type === 'insert-result') {
+        if (event.data.success) {
+          showToast('Inserted into composer! 🚀');
+        } else {
+          showToast(event.data.error || 'Please open LinkedIn "Create a post" first');
+        }
+      }
     };
-    window.addEventListener('message', receiveComposerText);
-    return () => window.removeEventListener('message', receiveComposerText);
+    window.addEventListener('message', handleWindowMessage);
+    return () => window.removeEventListener('message', handleWindowMessage);
   }, []);
 
   const stats = useMemo(() => calculatePostStats(text), [text]);
@@ -247,7 +256,6 @@ export function App() {
   const handleInsertIntoLinkedIn = async () => {
     if (embedded) {
       window.parent.postMessage({ type: 'insert-formatted-text', text }, '*');
-      showToast('Inserted into composer! 🚀');
       return;
     }
 
@@ -262,15 +270,15 @@ export function App() {
       }
 
       chrome.tabs.sendMessage(tab.id, { type: 'insert-formatted-text', text }, (response) => {
-        if (chrome.runtime.lastError) {
-          showToast('Please open LinkedIn composer first');
+        if (chrome.runtime.lastError || !response?.success) {
+          showToast(response?.error || 'Please open LinkedIn "Create a post" first');
         } else {
           showToast('Inserted into LinkedIn! 🚀');
           setTimeout(() => window.close(), 500);
         }
       });
     } catch {
-      showToast('Make sure LinkedIn composer is open');
+      showToast('Please open LinkedIn "Create a post" first');
     }
   };
 
