@@ -1,0 +1,1 @@
+{"root":["./src/background.ts","./src/content/content.ts","./src/popup/app.tsx","./src/popup/main.tsx","./src/shared/constants.ts","./src/shared/formatter.ts","./src/shared/storage.ts"],"version":"5.9.3"}
