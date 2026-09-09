@@ -20,22 +20,22 @@ import {
   saveTheme
 } from '../shared/storage';
 import { DEFAULT_TEMPLATES, TemplateItem, maxTemplates } from '../shared/constants';
+import { FaLinkedin } from 'react-icons/fa6';
 import {
-  LinkedInIcon,
-  SparklesIcon,
-  CopyIcon,
-  CheckIcon,
-  SendIcon,
-  ResetIcon,
-  SunIcon,
-  MoonIcon,
-  TrashIcon,
-  PlusIcon,
-  EyeIcon,
-  EditIcon,
-  BookmarkIcon,
-  CloseIcon
-} from './components/Icons';
+  Sparkles,
+  Copy,
+  Check,
+  Send,
+  RotateCcw,
+  Sun,
+  Moon,
+  Trash2,
+  Plus,
+  Eye,
+  PenLine,
+  Bookmark,
+  X
+} from 'lucide-react';
 import { LinkedInCardPreview } from './components/LinkedInCardPreview';
 
 type TabType = 'compose' | 'preview' | 'templates';
@@ -324,7 +324,7 @@ export function App() {
       <header className="header">
         <div className="header-left">
           <div className="brand-badge">
-            <LinkedInIcon size={20} className="brand-logo" />
+            <FaLinkedin size={20} className="brand-logo" />
           </div>
           <div>
             <div className="brand-title-row">
@@ -347,7 +347,7 @@ export function App() {
             }}
             title="Reset Composer"
           >
-            <ResetIcon size={16} />
+            <RotateCcw size={16} />
           </button>
           <button
             type="button"
@@ -355,7 +355,7 @@ export function App() {
             onClick={toggleTheme}
             title={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
           >
-            {theme === 'light' ? <MoonIcon size={16} /> : <SunIcon size={16} />}
+            {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
           </button>
           <button
             type="button"
@@ -363,7 +363,7 @@ export function App() {
             onClick={handleClose}
             title={embedded ? 'Close Formatter Panel' : 'Close Popup'}
           >
-            <CloseIcon size={16} />
+            <X size={16} />
           </button>
         </div>
       </header>
@@ -375,7 +375,7 @@ export function App() {
           className={`tab-btn ${activeTab === 'compose' ? 'active' : ''}`}
           onClick={() => setActiveTab('compose')}
         >
-          <EditIcon size={15} />
+          <PenLine size={15} />
           <span>Editor & Styles</span>
         </button>
         <button
@@ -383,7 +383,7 @@ export function App() {
           className={`tab-btn ${activeTab === 'preview' ? 'active' : ''}`}
           onClick={() => setActiveTab('preview')}
         >
-          <EyeIcon size={15} />
+          <Eye size={15} />
           <span>Feed Preview</span>
           {stats.isPastSeeMore && <span className="tab-indicator-dot" title="Crossed mobile fold" />}
         </button>
@@ -392,7 +392,7 @@ export function App() {
           className={`tab-btn ${activeTab === 'templates' ? 'active' : ''}`}
           onClick={() => setActiveTab('templates')}
         >
-          <BookmarkIcon size={15} />
+          <Bookmark size={15} />
           <span>Templates</span>
         </button>
       </nav>
@@ -405,7 +405,7 @@ export function App() {
             <div className="editor-top-bar">
               <span className="editor-label">Post Composer</span>
               <div className="selection-hint">
-                <SparklesIcon size={13} />
+                <Sparkles size={13} />
                 <span>Tip: Highlight text to format specific words</span>
               </div>
             </div>
@@ -544,7 +544,7 @@ export function App() {
                 className="save-template-trigger-btn"
                 onClick={() => setShowSaveModal(true)}
               >
-                <PlusIcon size={14} />
+                <Plus size={14} />
                 <span>Save Draft</span>
               </button>
             </div>
@@ -618,7 +618,7 @@ export function App() {
                       onClick={(e) => handleDeleteTemplate(item.id, e)}
                       title="Delete template"
                     >
-                      <TrashIcon size={13} />
+                      <Trash2 size={13} />
                     </button>
                   )}
                 </div>
@@ -644,7 +644,7 @@ export function App() {
           onClick={handleCopy}
           title="Copy formatted post to clipboard"
         >
-          {hasCopied ? <CheckIcon size={17} /> : <CopyIcon size={17} />}
+          {hasCopied ? <Check size={17} /> : <Copy size={17} />}
           <span>{hasCopied ? 'Copied!' : 'Copy Post'}</span>
         </button>
 
@@ -654,7 +654,7 @@ export function App() {
           onClick={handleInsertIntoLinkedIn}
           title="Insert directly into open LinkedIn composer"
         >
-          <SendIcon size={17} />
+          <Send size={17} />
           <span>Insert to LinkedIn</span>
         </button>
       </footer>

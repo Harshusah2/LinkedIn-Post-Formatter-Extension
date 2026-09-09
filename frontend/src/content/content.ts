@@ -1,6 +1,7 @@
 const buttonId = 'linkedin-post-formatter-button';
 let formatterFrame: HTMLIFrameElement | null = null;
 let isAnimatingClose = false;
+let activeComposer: HTMLElement | null = null;
 
 const composerSelectors = [
   '[contenteditable="true"][role="textbox"]',
@@ -8,14 +9,30 @@ const composerSelectors = [
   '.ql-editor'
 ];
 
+function isCommentEditor(element: HTMLElement) {
+  const metadata = [
+    element.getAttribute('aria-label'),
+    element.getAttribute('data-placeholder'),
+    element.getAttribute('placeholder'),
+    element.closest('[aria-label]')?.getAttribute('aria-label')
+  ].filter(Boolean).join(' ').toLowerCase();
+  return metadata.includes('comment') || metadata.includes('reply');
+}
+
 function findComposer(): HTMLElement | null {
-  for (const selector of composerSelectors) {
-    const composer = document.querySelector(selector);
-    if (composer instanceof HTMLElement && composer.offsetParent !== null) {
-      return composer;
-    }
+  if (activeComposer && activeComposer.isConnected && activeComposer.offsetParent !== null && !isCommentEditor(activeComposer)) {
+    return activeComposer;
   }
-  return null;
+
+  const candidates = Array.from(document.querySelectorAll('[contenteditable="true"], .ql-editor'))
+    .filter((element): element is HTMLElement => element instanceof HTMLElement)
+    .filter((element) => element.offsetParent !== null && !isCommentEditor(element));
+
+  return candidates.sort((first, second) => {
+    const firstDialog = first.closest('[role="dialog"]') ? 1 : 0;
+    const secondDialog = second.closest('[role="dialog"]') ? 1 : 0;
+    return secondDialog - firstDialog;
+  })[0] ?? null;
 }
 
 function insertText(composer: HTMLElement, text: string) {
@@ -181,6 +198,13 @@ function ensureButton() {
   document.body.appendChild(button);
 }
 
+document.addEventListener('focusin', (event) => {
+  const target = event.target;
+  if (target instanceof HTMLElement && target.isContentEditable && !isCommentEditor(target)) {
+    activeComposer = target;
+  }
+});
+
 // Window communication from embedded iframe
 window.addEventListener('message', async (event) => {
   if (event.source !== formatterFrame?.contentWindow) return;
@@ -238,3 +262,5 @@ chrome.runtime.onMessage.addListener((message: { type?: string; text?: string },
 
 ensureButton();
 new MutationObserver(ensureButton).observe(document.documentElement, { childList: true, subtree: true });
+
+

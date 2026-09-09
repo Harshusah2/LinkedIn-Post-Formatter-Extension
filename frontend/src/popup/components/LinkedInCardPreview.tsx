@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ThumbsUpIcon, MessageSquareIcon, RepeatIcon, SendIcon } from './Icons';
+import { ThumbsUp, MessageSquare, Repeat, Send } from 'lucide-react';
 
 interface LinkedInCardPreviewProps {
   text: string;
@@ -94,19 +94,19 @@ export function LinkedInCardPreview({ text, charCount }: LinkedInCardPreviewProp
         {/* Feed Actions Bar */}
         <div className="linkedin-actions-bar">
           <button type="button" className="linkedin-action-btn">
-            <ThumbsUpIcon size={16} />
+            <ThumbsUp size={16} />
             <span>Like</span>
           </button>
           <button type="button" className="linkedin-action-btn">
-            <MessageSquareIcon size={16} />
+            <MessageSquare size={16} />
             <span>Comment</span>
           </button>
           <button type="button" className="linkedin-action-btn">
-            <RepeatIcon size={16} />
+            <Repeat size={16} />
             <span>Repost</span>
           </button>
           <button type="button" className="linkedin-action-btn">
-            <SendIcon size={16} />
+            <Send size={16} />
             <span>Send</span>
           </button>
         </div>
