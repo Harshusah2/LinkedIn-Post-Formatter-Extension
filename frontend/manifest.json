@@ -9,5 +9,8 @@
   "content_scripts": [
     { "matches": ["https://www.linkedin.com/*"], "js": ["content.js"], "run_at": "document_idle" }
   ],
-  "background": { "service_worker": "background.js", "type": "module" }
+  "background": { "service_worker": "background.js", "type": "module" },
+  "web_accessible_resources": [{ "resources": ["index.html", "*.js", "*.css", "assets/*"], "matches": ["https://www.linkedin.com/*"] }]
 }
+
+

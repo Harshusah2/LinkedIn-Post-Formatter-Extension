@@ -12,6 +12,17 @@ export function App() {
   const [text, setText] = useState('Write your LinkedIn post here...');
   const [style, setStyle] = useState<StyleKey>('plain');
   const [templates, setTemplates] = useState<string[]>(createSampleTemplates);
+  const query = new URLSearchParams(window.location.search);
+  const embedded = query.get('embedded') === '1';
+  const targetTabId = Number(query.get('targetTabId'));
+
+  useEffect(() => {
+    const receiveComposerText = (event: MessageEvent<{ type?: string; text?: string }>) => {
+      if (event.data?.type === 'composer-text' && typeof event.data.text === 'string') setText(event.data.text);
+    };
+    window.addEventListener('message', receiveComposerText);
+    return () => window.removeEventListener('message', receiveComposerText);
+  }, []);
   const formatted = useMemo(() => formatText(text, style), [text, style]);
 
   useEffect(() => {
@@ -38,9 +49,14 @@ export function App() {
   }
 
   async function handleInsertIntoLinkedIn() {
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    const tab = tabs[0];
-    if (!tab?.id || !tab.url?.includes('linkedin.com')) return;
+    if (embedded) {
+      window.parent.postMessage({ type: 'insert-formatted-text', text: formatted }, '*');
+      return;
+    }
+    const tabId = Number.isInteger(targetTabId) && targetTabId > 0 ? targetTabId : undefined;
+    const tabs = tabId ? [] : await chrome.tabs.query({ active: true, currentWindow: true });
+    const tab = tabId ? { id: tabId } : tabs[0];
+    if (!tab?.id) return;
     await chrome.tabs.sendMessage(tab.id, { type: 'insert-formatted-text', text: formatted });
     window.close();
   }
@@ -62,3 +78,5 @@ export function App() {
     </div>
   );
 }
+
+
