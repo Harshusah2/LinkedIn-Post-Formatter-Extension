@@ -1,5 +1,11 @@
-chrome.runtime.onMessage.addListener(
-  (message: { type?: string; text?: string }, sender, sendResponse) => {
+﻿chrome.runtime.onMessage.addListener(
+  (message: { type?: string; text?: string; error?: string; source?: string }, sender, sendResponse) => {
+    if (message.type === 'extension-error') {
+      console.error('[LinkedIn Post Formatter] Content-script error:', message.error, message.source);
+      sendResponse({ status: 'logged' });
+      return false;
+    }
+
     if (message.type !== 'open-formatter' || typeof message.text !== 'string') {
       sendResponse({ status: 'ignored' });
       return false;
@@ -26,3 +32,5 @@ chrome.runtime.onMessage.addListener(
     return true; // Keep message port open for async sendResponse
   }
 );
+
+

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   STYLE_OPTIONS,
   BULLET_STYLES,
@@ -25,7 +25,7 @@ import {
   Sparkles,
   Copy,
   Check,
-  Send,
+
   RotateCcw,
   Sun,
   Moon,
@@ -249,36 +249,6 @@ export function App() {
       window.parent.postMessage({ type: 'close-formatter' }, '*');
     } else {
       window.close();
-    }
-  };
-
-  // Insert into LinkedIn active post composer
-  const handleInsertIntoLinkedIn = async () => {
-    if (embedded) {
-      window.parent.postMessage({ type: 'insert-formatted-text', text }, '*');
-      return;
-    }
-
-    try {
-      const tabId = Number.isInteger(targetTabId) && targetTabId > 0 ? targetTabId : undefined;
-      const tabs = tabId ? [] : await chrome.tabs.query({ active: true, currentWindow: true });
-      const tab = tabId ? { id: tabId } : tabs[0];
-
-      if (!tab?.id) {
-        showToast('No active LinkedIn tab found');
-        return;
-      }
-
-      chrome.tabs.sendMessage(tab.id, { type: 'insert-formatted-text', text }, (response) => {
-        if (chrome.runtime.lastError || !response?.success) {
-          showToast(response?.error || 'Please open LinkedIn "Create a post" first');
-        } else {
-          showToast('Inserted into LinkedIn! 🚀');
-          setTimeout(() => window.close(), 500);
-        }
-      });
-    } catch {
-      showToast('Please open LinkedIn "Create a post" first');
     }
   };
 
@@ -656,16 +626,10 @@ export function App() {
           <span>{hasCopied ? 'Copied!' : 'Copy Post'}</span>
         </button>
 
-        <button
-          type="button"
-          className="action-btn-insert"
-          onClick={handleInsertIntoLinkedIn}
-          title="Insert directly into open LinkedIn composer"
-        >
-          <Send size={17} />
-          <span>Insert to LinkedIn</span>
-        </button>
+
       </footer>
     </div>
   );
 }
+
+
