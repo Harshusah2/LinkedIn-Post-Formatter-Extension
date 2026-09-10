@@ -368,7 +368,9 @@ export function cleanExtraLineBreaks(text: string): string {
 }
 
 /**
- * Real-time post stats
+ * Real-time post stats.
+ * LinkedIn's "see more" fold triggers at ~220 chars OR 5+ visual lines (whichever comes first).
+ * Reference: Claude audit finding — 210 was incorrect, actual cutoff is ~220 chars / 5 lines.
  */
 export function calculatePostStats(text: string) {
   const clean = unformatText(text);
@@ -378,16 +380,18 @@ export function calculatePostStats(text: string) {
   // Average reading speed ~ 200 wpm (words per minute)
   const readSeconds = Math.max(1, Math.round((wordCount / 200) * 60));
 
-  // LinkedIn desktop/mobile "see more" cutoff occurs at ~210 characters or line 3
+  // LinkedIn "see more" fold: triggers at ~220 chars OR if post has more than 5 lines
+  const SEE_MORE_CHAR_LIMIT = 220;
+  const SEE_MORE_LINE_LIMIT = 5;
   const lines = text.split('\n');
-  const seeMoreCutoffIndex = 210;
-  const isPastSeeMore = charCount > seeMoreCutoffIndex;
+  const isPastSeeMore = charCount > SEE_MORE_CHAR_LIMIT || lines.length > SEE_MORE_LINE_LIMIT;
 
   return {
     charCount,
     wordCount,
     readSeconds,
     isPastSeeMore,
-    lineCount: lines.length
+    lineCount: lines.length,
+    SEE_MORE_CHAR_LIMIT
   };
 }

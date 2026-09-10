@@ -105,6 +105,11 @@ export async function clearPendingText(): Promise<void> {
   localStorage.removeItem(pendingTextKey);
 }
 
+/**
+ * Load saved theme preference.
+ * Reads from localStorage synchronously for instant first render,
+ * then chrome.storage.sync is used for cross-device persistence via saveTheme.
+ */
 export function loadSavedTheme(): 'light' | 'dark' {
   try {
     const saved = localStorage.getItem(themeKey);
@@ -113,8 +118,38 @@ export function loadSavedTheme(): 'light' | 'dark' {
   return 'light';
 }
 
+/**
+ * Persist theme to both chrome.storage.sync (cross-device) and
+ * localStorage (instant read on next open without waiting for async storage).
+ */
 export function saveTheme(theme: 'light' | 'dark'): void {
+  // Write to localStorage for synchronous reads
   try {
     localStorage.setItem(themeKey, theme);
   } catch {}
+  // Write to chrome.storage.sync for cross-device persistence
+  try {
+    if (typeof chrome !== 'undefined' && chrome.storage?.sync) {
+      chrome.storage.sync.set({ [themeKey]: theme }).catch(() => {});
+    }
+  } catch {}
+}
+
+/**
+ * Load theme from chrome.storage.sync and update localStorage cache.
+ * Call this on startup to pick up the synced preference.
+ */
+export async function syncThemeFromCloud(): Promise<'light' | 'dark'> {
+  try {
+    if (typeof chrome !== 'undefined' && chrome.storage?.sync) {
+      const result = await chrome.storage.sync.get(themeKey);
+      const synced = result[themeKey];
+      if (synced === 'dark' || synced === 'light') {
+        // Update localStorage cache so next synchronous read is correct
+        try { localStorage.setItem(themeKey, synced); } catch {}
+        return synced;
+      }
+    }
+  } catch {}
+  return loadSavedTheme();
 }

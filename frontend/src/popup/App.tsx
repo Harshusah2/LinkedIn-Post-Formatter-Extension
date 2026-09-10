@@ -17,7 +17,8 @@ import {
   saveTemplate,
   deleteTemplate,
   loadSavedTheme,
-  saveTheme
+  saveTheme,
+  syncThemeFromCloud
 } from '../shared/storage';
 import { DEFAULT_TEMPLATES, TemplateItem, maxTemplates } from '../shared/constants';
 import { FaLinkedin } from 'react-icons/fa6';
@@ -34,7 +35,8 @@ import {
   Eye,
   PenLine,
   Bookmark,
-  X
+  X,
+  Send
 } from 'lucide-react';
 import { LinkedInCardPreview } from './components/LinkedInCardPreview';
 
@@ -58,6 +60,7 @@ export function App() {
   const [showSaveModal, setShowSaveModal] = useState<boolean>(false);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [insertErrorDetails, setInsertErrorDetails] = useState<string | null>(null);
   const [hasCopied, setHasCopied] = useState<boolean>(false);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -78,9 +81,18 @@ export function App() {
 
   // Initialize theme and load data
   useEffect(() => {
+    // 1. Instant synchronous read from localStorage for immediate render
     const saved = loadSavedTheme();
     setTheme(saved);
     document.documentElement.setAttribute('data-theme', saved);
+
+    // 2. Async sync from chrome.storage.sync — picks up cross-device preference
+    syncThemeFromCloud().then((synced) => {
+      if (synced !== saved) {
+        setTheme(synced);
+        document.documentElement.setAttribute('data-theme', synced);
+      }
+    });
 
     void initTemplates();
     void loadComposerText();
@@ -96,9 +108,12 @@ export function App() {
       }
       if (event.data?.type === 'insert-result') {
         if (event.data.success) {
+          setInsertErrorDetails(null);
           showToast('Inserted into composer! 🚀');
         } else {
-          showToast(event.data.error || 'Please open LinkedIn "Create a post" first');
+          const err = event.data.error || 'Please open LinkedIn "Create a post" first';
+          setInsertErrorDetails(err);
+          showToast('Autofill failed — see error details below');
         }
       }
     };
@@ -251,6 +266,43 @@ export function App() {
     }
   };
 
+  // Insert post into LinkedIn's "Create a post" composer
+  const handleInsertToLinkedIn = () => {
+    if (!text.trim()) {
+      showToast('Nothing to insert — write your post first!');
+      return;
+    }
+    setInsertErrorDetails(null);
+
+    if (embedded) {
+      // Running as embedded iframe inside LinkedIn — postMessage to parent content script
+      window.parent.postMessage({ type: 'insert-to-linkedin', text }, '*');
+    } else {
+      // Running as a standalone popup — send message to the active tab's content script
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const tabId = tabs[0]?.id;
+        if (typeof tabId !== 'number') {
+          showToast('Could not find LinkedIn tab');
+          return;
+        }
+        chrome.tabs.sendMessage(tabId, { type: 'insert-to-linkedin', text }, { frameId: 0 }, (response) => {
+          if (chrome.runtime.lastError) {
+            const err = chrome.runtime.lastError.message || 'Open LinkedIn first, then try again';
+            setInsertErrorDetails(`Extension connection error: ${err}`);
+            showToast('Connection error — see details below');
+          } else if (response?.success) {
+            setInsertErrorDetails(null);
+            showToast('Inserted into LinkedIn composer! 🚀');
+          } else {
+            const err = response?.error || 'Please open LinkedIn "Create a post" first';
+            setInsertErrorDetails(err);
+            showToast('Autofill failed — see error details below');
+          }
+        });
+      });
+    }
+  };
+
   // Close handler (embedded iframe or popup window)
   const handleClose = () => {
     if (embedded) {
@@ -315,7 +367,6 @@ export function App() {
           <div>
             <div className="brand-title-row">
               <h1 className="brand-title">Post Formatter</h1>
-              <span className="pro-badge">PRO</span>
             </div>
             <p className="brand-sub">Craft high-impact LinkedIn posts</p>
           </div>
@@ -353,6 +404,46 @@ export function App() {
           </button>
         </div>
       </header>
+
+      {/* Autofill Error Alert Banner with full diagnostics and Copy button */}
+      {insertErrorDetails && (
+        <div className="error-alert-banner">
+          <div className="error-alert-header">
+            <span>⚠️ Autofill Issue Detected</span>
+            <button
+              type="button"
+              className="error-alert-close"
+              onClick={() => setInsertErrorDetails(null)}
+              title="Dismiss error report"
+            >
+              <X size={14} />
+            </button>
+          </div>
+          <pre className="error-alert-content">{insertErrorDetails}</pre>
+          <div className="error-alert-actions">
+            <button
+              type="button"
+              className="error-alert-btn"
+              onClick={() => {
+                void copyToClipboard(insertErrorDetails);
+                showToast('Copied error report! 📋');
+              }}
+            >
+              Copy Error Info
+            </button>
+            <button
+              type="button"
+              className="error-alert-btn primary"
+              onClick={() => {
+                setInsertErrorDetails(null);
+                handleInsertToLinkedIn();
+              }}
+            >
+              Retry Insert
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Tab Navigation */}
       <nav className="tab-navigation">
@@ -430,11 +521,11 @@ export function App() {
               </div>
 
               {stats.isPastSeeMore ? (
-                <div className="hook-status-badge warning" title="LinkedIn cuts off around 210 chars on mobile">
-                  ⚠️ Past "See more" fold ({stats.charCount}/210)
+                <div className="hook-status-badge warning" title={`LinkedIn shows "see more" after ~220 chars or 5+ lines`}>
+                  ⚠️ Past "See more" fold ({stats.charCount}/{stats.SEE_MORE_CHAR_LIMIT})
                 </div>
               ) : (
-                <div className="hook-status-badge success" title="Entire text fits above fold">
+                <div className="hook-status-badge success" title="Entire post fits above the LinkedIn fold">
                   ✅ Fits above fold
                 </div>
               )}
@@ -646,7 +737,17 @@ export function App() {
           <span>{hasCopied ? 'Copied!' : 'Copy Post'}</span>
         </button>
 
-
+        {embedded && (
+          <button
+            type="button"
+            className="action-btn-insert"
+            onClick={handleInsertToLinkedIn}
+            title="Insert formatted post directly into LinkedIn's Create a post field"
+          >
+            <Send size={17} />
+            <span>Insert to LinkedIn</span>
+          </button>
+        )}
       </footer>
     </div>
   );
