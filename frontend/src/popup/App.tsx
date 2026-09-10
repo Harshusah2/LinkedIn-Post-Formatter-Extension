@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   STYLE_OPTIONS,
   BULLET_STYLES,
@@ -61,6 +61,16 @@ export function App() {
   const [hasCopied, setHasCopied] = useState<boolean>(false);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const lastSelectionRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 });
+
+  const recordSelection = () => {
+    if (textareaRef.current) {
+      lastSelectionRef.current = {
+        start: textareaRef.current.selectionStart,
+        end: textareaRef.current.selectionEnd
+      };
+    }
+  };
 
   const query = new URLSearchParams(window.location.search);
   const embedded = query.get('embedded') === '1';
@@ -129,16 +139,12 @@ export function App() {
   const applyStyle = (styleKey: StyleKey) => {
     setActiveStyle(styleKey);
     const textarea = textareaRef.current;
-    if (!textarea) {
-      setText((prev) => formatText(prev, styleKey));
-      return;
-    }
-
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
+    const start = textarea ? textarea.selectionStart : lastSelectionRef.current.start;
+    const end = textarea ? textarea.selectionEnd : lastSelectionRef.current.end;
 
     const { nextText, newStart, newEnd } = formatSelectionOrAll(text, start, end, styleKey);
     setText(nextText);
+    lastSelectionRef.current = { start: newStart, end: newEnd };
 
     // Restore cursor selection after state update
     requestAnimationFrame(() => {
@@ -151,14 +157,15 @@ export function App() {
     showToast(start === end ? `Formatted all as ${styleKey}` : `Formatted selection as ${styleKey}`);
   };
 
-  // Apply bullet points to selected lines or entire text
+  // Apply bullet points to selected lines or current line
   const handleApplyBullet = (bulletIcon: string) => {
     const textarea = textareaRef.current;
-    const start = textarea?.selectionStart ?? 0;
-    const end = textarea?.selectionEnd ?? text.length;
+    const start = textarea ? textarea.selectionStart : lastSelectionRef.current.start;
+    const end = textarea ? textarea.selectionEnd : lastSelectionRef.current.end;
 
     const { nextText, newStart, newEnd } = applyBulletToList(text, start, end, bulletIcon);
     setText(nextText);
+    lastSelectionRef.current = { start: newStart, end: newEnd };
 
     requestAnimationFrame(() => {
       if (textareaRef.current) {
@@ -167,7 +174,8 @@ export function App() {
       }
     });
 
-    showToast('Applied list bullets 🔹');
+    const isSingle = start === end;
+    showToast(isSingle ? 'Updated bullet on current line 🔹' : 'Applied list bullets 🔹');
   };
 
   // Quick Action: Hookify first line
@@ -393,7 +401,14 @@ export function App() {
               id="post-input"
               className="composer-textarea"
               value={text}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => {
+                setText(e.target.value);
+                recordSelection();
+              }}
+              onSelect={recordSelection}
+              onKeyUp={recordSelection}
+              onClick={recordSelection}
+              onPointerUp={recordSelection}
               placeholder="Write or paste your LinkedIn post here..."
               rows={9}
               spellCheck="true"
@@ -438,6 +453,7 @@ export function App() {
                   key={item.key}
                   type="button"
                   className={`style-chip ${activeStyle === item.key ? 'active' : ''}`}
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={() => applyStyle(item.key)}
                   title={`Apply ${item.label} styling`}
                 >
@@ -457,6 +473,7 @@ export function App() {
               <button
                 type="button"
                 className="tool-btn"
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={handleHookify}
                 title="Bold the very first line of your post"
               >
@@ -465,6 +482,7 @@ export function App() {
               <button
                 type="button"
                 className="tool-btn"
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={handleCleanSpacing}
                 title="Remove messy stacked blank lines"
               >
@@ -473,6 +491,7 @@ export function App() {
               <button
                 type="button"
                 className="tool-btn"
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={handleClearFormatting}
                 title="Convert all styled Unicode back to plain standard text"
               >
@@ -489,6 +508,7 @@ export function App() {
                     key={b.icon}
                     type="button"
                     className="bullet-btn"
+                    onMouseDown={(e) => e.preventDefault()}
                     onClick={() => handleApplyBullet(b.icon)}
                     title={b.label}
                   >
