@@ -112,52 +112,62 @@ function ensureButton() {
   const button = document.createElement('button');
   button.id = buttonId;
   button.type = 'button';
+  button.title = 'Format LinkedIn Post';
   button.setAttribute('aria-label', 'Open LinkedIn Post Formatter');
 
   button.innerHTML = `
-    <span style="display:inline-flex;align-items:center;gap:6px;">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0;">
-        <path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.28 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.75M6.88 8.56a1.68 1.68 0 0 0 1.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 0 0-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37h2.77z"/>
+    <div style="width:34px;height:34px;border-radius:50%;background:#0A66C2;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,0.18);transition:transform 0.2s ease;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="#ffffff" style="display:block;">
+        <path d="M19 19h-2.9v-4.5c0-1.08-.02-2.47-1.5-2.47-1.51 0-1.74 1.18-1.74 2.39V19h-2.9V9.5h2.78v1.3h.04c.39-.73 1.34-1.5 2.76-1.5 2.95 0 3.5 1.94 3.5 4.47V19zM6.9 8.2a1.69 1.69 0 1 1 0-3.37 1.69 1.69 0 0 1 0 3.37zM5.45 19h2.9V9.5h-2.9V19z"/>
       </svg>
-      <span>Format</span>
-    </span>
+    </div>
   `;
 
-  // Attached to screen left side, vertically centered
+  // Sticked on screen's left at center - sleek dark navy tab with rounded outer corners
   Object.assign(button.style, {
     position: 'fixed',
     left: '0px',
     top: '50%',
     transform: 'translateY(-50%)',
     zIndex: '2147483646',
-    padding: '11px 15px 11px 10px',
-    borderRadius: '0 14px 14px 0',
+    width: '50px',
+    height: '52px',
+    borderRadius: '0 16px 16px 0',
     border: 'none',
-    borderLeft: 'none',
-    background: 'linear-gradient(135deg, #0a66c2 0%, #004182 100%)',
-    color: '#ffffff',
-    fontWeight: '700',
-    fontSize: '12.5px',
-    letterSpacing: '0.02em',
-    boxShadow: '2px 4px 16px rgba(10, 102, 194, 0.4), 0 1px 3px rgba(0,0,0,0.1)',
+    background: '#1D2D44',
+    boxShadow: '2px 4px 16px rgba(0, 0, 0, 0.22), 0 1px 4px rgba(0, 0, 0, 0.12)',
     cursor: 'pointer',
     userSelect: 'none',
-    transition: 'transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s ease, opacity 0.2s ease',
+    transition: 'transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s ease, background 0.22s ease, opacity 0.2s ease',
     display: 'flex',
-    alignItems: 'center'
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '0',
+    outline: 'none',
+    webkitTapHighlightColor: 'transparent'
   });
 
-  // Micro-interaction hover slide effect
+  // Micro-interaction hover & click effects
   button.addEventListener('mouseenter', () => {
     if (!formatterFrame) {
       button.style.transform = 'translateY(-50%) translateX(4px)';
-      button.style.boxShadow = '4px 6px 20px rgba(10, 102, 194, 0.55), 0 2px 4px rgba(0,0,0,0.15)';
+      button.style.boxShadow = '4px 6px 20px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.15)';
+      button.style.background = '#243956';
     }
   });
 
   button.addEventListener('mouseleave', () => {
     button.style.transform = 'translateY(-50%) translateX(0)';
-    button.style.boxShadow = '2px 4px 16px rgba(10, 102, 194, 0.4), 0 1px 3px rgba(0,0,0,0.1)';
+    button.style.boxShadow = '2px 4px 16px rgba(0, 0, 0, 0.22), 0 1px 4px rgba(0, 0, 0, 0.12)';
+    button.style.background = '#1D2D44';
+  });
+
+  button.addEventListener('mousedown', () => {
+    button.style.transform = 'translateY(-50%) translateX(2px) scale(0.96)';
+  });
+
+  button.addEventListener('mouseup', () => {
+    button.style.transform = 'translateY(-50%) translateX(4px)';
   });
 
   button.addEventListener('click', () => {
