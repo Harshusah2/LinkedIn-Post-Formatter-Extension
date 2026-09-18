@@ -1,9 +1,20 @@
-import { DEFAULT_TEMPLATES, TemplateItem } from './constants';
+import { DEFAULT_TEMPLATES, DEFAULT_HASHTAG_SETS, HashtagSet, TemplateItem } from './constants';
 
 const templatesKey = 'linkedin-formatter.templates.v2';
 const legacyTemplatesKey = 'linkedin-formatter.templates';
 const pendingTextKey = 'linkedin-formatter.pending-text';
 const themeKey = 'linkedin-formatter.theme';
+const draftsKey = 'linkedin-formatter.drafts';
+const hashtagSetsKey = 'linkedin-formatter.hashtag-sets.v1';
+
+export interface DraftItem {
+  id: string;
+  preview: string;  // first 60 chars of plain text
+  text: string;     // full text content
+  savedAt: number;  // Date.now() timestamp
+}
+
+const MAX_DRAFTS = 5;
 
 export async function loadTemplates(): Promise<TemplateItem[]> {
   try {
@@ -152,4 +163,105 @@ export async function syncThemeFromCloud(): Promise<'light' | 'dark'> {
     }
   } catch {}
   return loadSavedTheme();
+}
+
+// ─── POST HISTORY / DRAFTS ──────────────────────────────────────────────────
+
+/**
+ * Auto-save the current composer text as a draft.
+ * Keeps only the last MAX_DRAFTS (5) entries. Stored in chrome.storage.local.
+ */
+export async function saveDraft(text: string): Promise<void> {
+  if (!text || text.trim().length < 20) return;
+
+  const existing = await loadDrafts();
+  const newDraft: DraftItem = {
+    id: `draft-${Date.now()}`,
+    preview: text.replace(/\n/g, ' ').slice(0, 60).trim(),
+    text,
+    savedAt: Date.now(),
+  };
+
+  // Remove duplicate near-identical drafts (same first 40 chars)
+  const deduped = existing.filter(
+    (d) => d.text.slice(0, 40) !== text.slice(0, 40)
+  );
+
+  const next = [newDraft, ...deduped].slice(0, MAX_DRAFTS);
+
+  try {
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      await chrome.storage.local.set({ [draftsKey]: next });
+      return;
+    }
+  } catch {}
+  try { localStorage.setItem(draftsKey, JSON.stringify(next)); } catch {}
+}
+
+/** Load saved drafts from chrome.storage.local */
+export async function loadDrafts(): Promise<DraftItem[]> {
+  try {
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      const result = await chrome.storage.local.get(draftsKey);
+      if (Array.isArray(result[draftsKey])) return result[draftsKey] as DraftItem[];
+    }
+  } catch {}
+  try {
+    const raw = localStorage.getItem(draftsKey);
+    if (raw) return JSON.parse(raw) as DraftItem[];
+  } catch {}
+  return [];
+}
+
+/** Delete a single draft by id */
+export async function deleteDraft(id: string): Promise<DraftItem[]> {
+  const current = await loadDrafts();
+  const next = current.filter((d) => d.id !== id);
+  try {
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      await chrome.storage.local.set({ [draftsKey]: next });
+      return next;
+    }
+  } catch {}
+  try { localStorage.setItem(draftsKey, JSON.stringify(next)); } catch {}
+  return next;
+}
+
+// ─── HASHTAG SETS ────────────────────────────────────────────────────────────
+
+/** Load saved hashtag sets from chrome.storage.sync (cross-device) */
+export async function loadHashtagSets(): Promise<HashtagSet[]> {
+  try {
+    if (typeof chrome !== 'undefined' && chrome.storage?.sync) {
+      const result = await chrome.storage.sync.get(hashtagSetsKey);
+      if (Array.isArray(result[hashtagSetsKey]) && result[hashtagSetsKey].length > 0) {
+        return result[hashtagSetsKey] as HashtagSet[];
+      }
+    }
+  } catch {}
+  return DEFAULT_HASHTAG_SETS;
+}
+
+/** Save a hashtag set (insert or update by id) */
+export async function saveHashtagSet(set: HashtagSet): Promise<HashtagSet[]> {
+  const current = await loadHashtagSets();
+  const next = [set, ...current.filter((s) => s.id !== set.id)];
+  try {
+    if (typeof chrome !== 'undefined' && chrome.storage?.sync) {
+      await chrome.storage.sync.set({ [hashtagSetsKey]: next });
+    }
+  } catch {}
+  return next;
+}
+
+/** Delete a hashtag set by id */
+export async function deleteHashtagSet(id: string): Promise<HashtagSet[]> {
+  const current = await loadHashtagSets();
+  const next = current.filter((s) => s.id !== id);
+  try {
+    if (typeof chrome !== 'undefined' && chrome.storage?.sync) {
+      await chrome.storage.sync.set({ [hashtagSetsKey]: next });
+    }
+  } catch {}
+  return next;
 }
