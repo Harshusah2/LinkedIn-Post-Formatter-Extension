@@ -213,127 +213,127 @@ function isNotHidden(el: Element): boolean {
 }
 
 /**
+ * Invokes React's internal onClick handler if present on the element or any of its ancestors.
+ * Traverses both __reactProps and __reactFiber to ensure direct execution regardless of synthetic DOM event issues.
+ */
+function triggerReactClick(el: HTMLElement): boolean {
+  let curr: HTMLElement | null = el;
+  for (let i = 0; i < 10 && curr && curr !== document.body; i++) {
+    try {
+      // 1. Direct __reactProps / __reactEventHandlers
+      const propKey = Object.keys(curr).find(
+        (k) => k.startsWith('__reactProps') || k.startsWith('__reactEventHandlers')
+      );
+      if (propKey) {
+        const props = (curr as any)[propKey];
+        if (props && typeof props.onClick === 'function') {
+          props.onClick({
+            bubbles: true,
+            cancelable: true,
+            currentTarget: curr,
+            target: el,
+            preventDefault: () => {},
+            stopPropagation: () => {}
+          });
+          return true;
+        }
+      }
+
+      // 2. React Fiber node memoizedProps
+      const fiberKey = Object.keys(curr).find((k) => k.startsWith('__reactFiber'));
+      if (fiberKey) {
+        let fiber = (curr as any)[fiberKey];
+        for (let depth = 0; depth < 5 && fiber; depth++) {
+          if (fiber.memoizedProps?.onClick && typeof fiber.memoizedProps.onClick === 'function') {
+            fiber.memoizedProps.onClick({
+              bubbles: true,
+              cancelable: true,
+              currentTarget: curr,
+              target: el,
+              preventDefault: () => {},
+              stopPropagation: () => {}
+            });
+            return true;
+          }
+          fiber = fiber.return;
+        }
+      }
+    } catch {}
+    curr = curr.parentElement;
+  }
+  return false;
+}
+
+
+/**
  * Dispatches a complete sequence of pointer/mouse events to reliably simulate a user click.
  * Emits PointerEvents, MouseEvents with standard button states (buttons: 1 on down, 0 on up/click),
  * and dispatches across the leaf element, clickable container, and parent to guarantee React/Ember handler triggering.
  */
 function simulateClick(el: HTMLElement) {
-  // Find any ancestor that looks like the clickable wrapper
-  let clickable: HTMLElement = el;
-  let curr: HTMLElement | null = el;
-  for (let i = 0; i < 4 && curr && curr !== document.body; i++) {
-    if (
-      curr.tagName === 'BUTTON' ||
-      curr.tagName === 'A' ||
-      curr.getAttribute('role') === 'button' ||
-      curr.getAttribute('tabindex') !== null
-    ) {
-      clickable = curr;
-      break;
-    }
+  // 1. Force window focus and blur iframe
+  window.focus();
+  if (formatterFrame) {
     try {
-      if (window.getComputedStyle(curr).cursor === 'pointer') {
-        clickable = curr;
-      }
+      formatterFrame.blur();
     } catch {}
-    curr = curr.parentElement;
   }
 
-  // Focus both elements
-  try { clickable.focus(); } catch {}
-  try { el.focus(); } catch {}
+  // 2. Resolve both the outer container and the draft component
+  const outerContainer = el.closest<HTMLElement>(
+    'div[aria-label="Start a post"], [aria-label="Start a post"], [aria-label*="Start a post" i], [componentkey], #draft-text-replaceable-component, button, [role="button"]'
+  ) || el;
 
-  // List of elements to trigger: inner target, clickable wrapper, and parent
-  const elementsToClick: HTMLElement[] = [el];
-  if (clickable !== el && !elementsToClick.includes(clickable)) {
-    elementsToClick.push(clickable);
-  }
-  if (
-    clickable.parentElement &&
-    clickable.parentElement !== document.body &&
-    !elementsToClick.includes(clickable.parentElement)
-  ) {
-    elementsToClick.push(clickable.parentElement);
-  }
+  const innerDraftPill = outerContainer.querySelector<HTMLElement>(
+    '#draft-text-replaceable-component, [componentkey="draft-text-replaceable-component"]'
+  ) || (outerContainer.id === 'draft-text-replaceable-component' ? outerContainer : null);
 
-  for (const target of elementsToClick) {
-    // 1. Pointerdown (buttons: 1)
+  const targets: HTMLElement[] = [];
+  if (!targets.includes(outerContainer)) targets.push(outerContainer);
+  if (innerDraftPill && !targets.includes(innerDraftPill)) targets.push(innerDraftPill);
+  if (!targets.includes(el)) targets.push(el);
+
+  const btn = el.closest<HTMLElement>('button, [role="button"], a');
+  if (btn && !targets.includes(btn)) targets.push(btn);
+
+  for (const target of targets) {
     try {
-      target.dispatchEvent(
-        new PointerEvent('pointerdown', {
-          bubbles: true,
-          cancelable: true,
-          button: 0,
-          buttons: 1,
-          pointerId: 1,
-          pointerType: 'mouse',
-          isPrimary: true
-        })
-      );
+      target.scrollIntoView({ behavior: 'instant', block: 'center' });
     } catch {}
 
-    // 2. Mousedown (buttons: 1)
+    try { target.focus(); } catch {}
+
+    triggerReactClick(target);
+
+    const rect = target.getBoundingClientRect();
+    const clientX = rect.left + (rect.width > 0 ? rect.width / 2 : 10);
+    const clientY = rect.top + (rect.height > 0 ? rect.height / 2 : 10);
+
+    const opts: MouseEventInit = {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      view: window,
+      clientX,
+      clientY,
+      screenX: clientX,
+      screenY: clientY
+    };
+
     try {
-      target.dispatchEvent(
-        new MouseEvent('mousedown', {
-          bubbles: true,
-          cancelable: true,
-          button: 0,
-          buttons: 1
-        })
-      );
+      target.dispatchEvent(new PointerEvent('pointerover', { ...opts, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
+      target.dispatchEvent(new MouseEvent('mouseover', opts));
+      target.dispatchEvent(new PointerEvent('pointerenter', { ...opts, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
+      target.dispatchEvent(new MouseEvent('mouseenter', opts));
+      target.dispatchEvent(new PointerEvent('pointerdown', { ...opts, button: 0, buttons: 1, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
+      target.dispatchEvent(new MouseEvent('mousedown', { ...opts, button: 0, buttons: 1 }));
+      target.dispatchEvent(new PointerEvent('pointerup', { ...opts, button: 0, buttons: 0, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
+      target.dispatchEvent(new MouseEvent('mouseup', { ...opts, button: 0, buttons: 0 }));
+      target.dispatchEvent(new MouseEvent('click', { ...opts, button: 0, buttons: 0 }));
     } catch {}
 
-    // 3. Pointerup (buttons: 0)
-    try {
-      target.dispatchEvent(
-        new PointerEvent('pointerup', {
-          bubbles: true,
-          cancelable: true,
-          button: 0,
-          buttons: 0,
-          pointerId: 1,
-          pointerType: 'mouse',
-          isPrimary: true
-        })
-      );
-    } catch {}
-
-    // 4. Mouseup (buttons: 0)
-    try {
-      target.dispatchEvent(
-        new MouseEvent('mouseup', {
-          bubbles: true,
-          cancelable: true,
-          button: 0,
-          buttons: 0
-        })
-      );
-    } catch {}
-
-    // 5. Native click() method
     try {
       target.click();
-    } catch {}
-
-    // 6. Synthetic click event (buttons: 0)
-    try {
-      target.dispatchEvent(
-        new MouseEvent('click', {
-          bubbles: true,
-          cancelable: true,
-          button: 0,
-          buttons: 0
-        })
-      );
-    } catch {}
-
-    // 7. Keyboard Enter & Space simulation (triggers interactive div keyboard listeners)
-    try {
-      target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }));
-      target.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }));
-      target.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true }));
-      target.dispatchEvent(new KeyboardEvent('keyup', { key: ' ', code: 'Space', bubbles: true, cancelable: true }));
     } catch {}
   }
 }
@@ -479,8 +479,17 @@ function getOpenCreatePostEditor(diag?: string[]): HTMLElement | null {
  * Clicks LinkedIn's "Start a post" button to open the Create Post modal.
  */
 function clickStartPostButton(diag?: string[]): boolean {
-  // Strategy 1: Known trigger button selectors
+  // Strategy 1: Exact selectors for LinkedIn's "Start a post" trigger
   const triggerSelectors = [
+    // Exact selectors from user's inspected LinkedIn DOM:
+    'div[aria-label="Start a post"]',
+    '#draft-text-replaceable-component',
+    '[componentkey="draft-text-replaceable-component"]',
+    '[componentkey][aria-label*="Start a post" i]',
+    'div[aria-label*="Start a post" i]',
+    '[aria-label="Start a post"]',
+    '[aria-label*="Start a post" i]',
+    // Classic/fallback trigger button selectors:
     'button.share-box-feed-entry__trigger',
     '[data-view-name="share-box-feed-entry__trigger"]',
     'button[data-control-name="share.sharebox_open"]',
@@ -496,7 +505,7 @@ function clickStartPostButton(diag?: string[]): boolean {
   for (const sel of triggerSelectors) {
     const btn = deepQuerySelectorAll<HTMLElement>(sel)[0];
     if (btn && isNotHidden(btn) && !isOurExtensionElement(btn)) {
-      diag?.push(`Clicked "Start a post" trigger using selector: ${sel}`);
+      diag?.push(`Clicked "Start a post" trigger using selector: ${sel} (<${btn.tagName} class="${btn.className.slice(0, 40)}">)`);
       simulateClick(btn);
       return true;
     }
@@ -507,38 +516,33 @@ function clickStartPostButton(diag?: string[]): boolean {
   const rawCandidates = deepQuerySelectorAll<HTMLElement>('button, [role="button"], span, p, div').filter((b) => {
     if (isOurExtensionElement(b)) return false;
     if (!isNotHidden(b)) return false;
+    if (b.closest('.feed-shared-update-v2, .feed-shared-update, article, .comments-comment-box, .msg-overlay-container, [data-urn*="activity"]')) {
+      return false;
+    }
     const t = b.textContent?.trim().toLowerCase() || '';
     // STRICT: Must contain "start a post" or "create a post" and be a leaf/button element (< 50 chars)
     return (t.includes('start a post') || t.includes('create a post')) && t.length < 50;
   });
 
   // Sort candidates:
-  // Priority 1: Has a button tag or button parent
+  // Priority 1: Has aria-label="Start a post", #draft-text-replaceable-component, or button tag/parent
   // Priority 2: Shortest text length (most specific leaf element)
   rawCandidates.sort((a, b) => {
-    const aIsBtn = a.tagName === 'BUTTON' || a.closest('button, [role="button"]') !== null;
-    const bIsBtn = b.tagName === 'BUTTON' || b.closest('button, [role="button"]') !== null;
-    if (aIsBtn && !bIsBtn) return -1;
-    if (!aIsBtn && bIsBtn) return 1;
+    const aIsTrigger = a.closest('[aria-label*="Start a post" i], #draft-text-replaceable-component, button, [role="button"]') !== null;
+    const bIsTrigger = b.closest('[aria-label*="Start a post" i], #draft-text-replaceable-component, button, [role="button"]') !== null;
+    if (aIsTrigger && !bIsTrigger) return -1;
+    if (!aIsTrigger && bIsTrigger) return 1;
     return (a.textContent?.trim().length || 0) - (b.textContent?.trim().length || 0);
   });
 
   if (rawCandidates.length > 0) {
     const best = rawCandidates[0];
-    diag?.push(`Clicked "Start a post" trigger via text: "${best.textContent?.trim()}" (<${best.tagName} class="${best.className}">)`);
-    simulateClick(best);
-    return true;
-  }
+    const targetBtn = best.closest<HTMLElement>(
+      'div[aria-label="Start a post"], [aria-label="Start a post"], [aria-label*="Start a post" i], #draft-text-replaceable-component, [componentkey], button, [role="button"]'
+    ) || best.parentElement || best;
 
-  // Strategy 3: Try media/photo detour button in the share box
-  const mediaBtn = deepQuerySelectorAll<HTMLElement>('button, [role="button"]').find((b) => {
-    if (isOurExtensionElement(b) || !isNotHidden(b)) return false;
-    const label = (b.getAttribute('aria-label') || b.textContent || '').toLowerCase().trim();
-    return label.includes('add media') || label.includes('add a photo') || label === 'media' || label === 'photo';
-  });
-  if (mediaBtn) {
-    diag?.push(`Clicked media detour trigger: "${mediaBtn.getAttribute('aria-label') || mediaBtn.textContent?.trim()}" (<${mediaBtn.tagName} class="${mediaBtn.className}">)`);
-    simulateClick(mediaBtn);
+    diag?.push(`Clicked "Start a post" trigger via text: "${best.textContent?.trim()}" (<${targetBtn.tagName} class="${targetBtn.className.slice(0, 40)}">)`);
+    simulateClick(targetBtn);
     return true;
   }
 
