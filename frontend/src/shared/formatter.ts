@@ -143,20 +143,24 @@ export function unformatText(input: string): string {
 /**
  * Format string with a specified style.
  * Uses code-point iteration (Array.from) to prevent splitting UTF-16 surrogate pairs.
+ * Supports style toggling (clicking active style reverts to plain) and combining decoration marks.
  */
 export function formatText(input: string, style: StyleKey): string {
-  // Always unformat any existing styled Unicode first so styles cleanly replace each other
-  const cleanInput = unformatText(input);
-
   if (style === 'plain') {
-    return cleanInput;
+    return unformatText(input);
   }
 
+  // Underline decoration: can stack on bold/italic or toggle off
   if (style === 'underline') {
-    return Array.from(cleanInput)
+    const hasUnderline = input.includes('\u0332');
+    if (hasUnderline) {
+      // Toggle OFF: remove combining underline marks
+      return input.replace(/\u0332/g, '');
+    }
+    // Toggle ON: add combining underline to every non-whitespace, non-combining character
+    return Array.from(input)
       .map((char) => {
-        // Do not add combining underline to newlines, whitespace, or emojis
-        if (char === '\n' || char === '\r' || char === ' ' || isEmojiOrSymbol(char)) {
+        if (char === '\n' || char === '\r' || char === ' ' || char === '\u0332' || char === '\u0336' || isEmojiOrSymbol(char)) {
           return char;
         }
         return `${char}\u0332`;
@@ -164,11 +168,17 @@ export function formatText(input: string, style: StyleKey): string {
       .join('');
   }
 
+  // Strikethrough decoration: can stack on bold/italic or toggle off
   if (style === 'strike') {
-    return Array.from(cleanInput)
+    const hasStrike = input.includes('\u0336');
+    if (hasStrike) {
+      // Toggle OFF: remove combining strikethrough marks
+      return input.replace(/\u0336/g, '');
+    }
+    // Toggle ON: add combining strikethrough to every non-whitespace, non-combining character
+    return Array.from(input)
       .map((char) => {
-        // Do not add combining strikethrough to newlines, whitespace, or emojis
-        if (char === '\n' || char === '\r' || char === ' ' || isEmojiOrSymbol(char)) {
+        if (char === '\n' || char === '\r' || char === ' ' || char === '\u0332' || char === '\u0336' || isEmojiOrSymbol(char)) {
           return char;
         }
         return `${char}\u0336`;
@@ -176,21 +186,35 @@ export function formatText(input: string, style: StyleKey): string {
       .join('');
   }
 
+  // Font styles (bold, italic, serif, mono, doubleStruck, script)
   const map = styleMaps[style];
-  return Array.from(cleanInput)
+  const cleanInput = unformatText(input);
+  const formatted = Array.from(cleanInput)
     .map((char) => map[char] || char)
     .join('');
+
+  // If the input was ALREADY in this exact style, toggle it back to plain text!
+  if (input === formatted) {
+    return cleanInput;
+  }
+
+  return formatted;
 }
 
 /**
- * Adjusts selection index so it never cuts in the middle of a UTF-16 surrogate pair
+ * Adjusts selection index so it never cuts in the middle of a UTF-16 surrogate pair or combining mark
  */
 function clampToSurrogateBoundary(text: string, index: number): number {
   if (index > 0 && index < text.length) {
     const prev = text.charCodeAt(index - 1);
     const curr = text.charCodeAt(index);
+    // If inside UTF-16 surrogate pair, step back to start of character
     if (prev >= 0xd800 && prev <= 0xdbff && curr >= 0xdc00 && curr <= 0xdfff) {
       return index - 1;
+    }
+    // If on a combining underline or strikethrough mark, step forward to include it
+    if (curr === 0x0332 || curr === 0x0336) {
+      return index + 1;
     }
   }
   return index;

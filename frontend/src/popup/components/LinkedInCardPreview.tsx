@@ -8,7 +8,7 @@ interface LinkedInCardPreviewProps {
 
 export function LinkedInCardPreview({ text, charCount }: LinkedInCardPreviewProps) {
   const [expanded, setExpanded] = useState(false);
-  const cutoffLimit = 210;
+  const cutoffLimit = 220;
   const isTruncated = charCount > cutoffLimit;
 
   // Render text with feed cutoff simulation
@@ -70,7 +70,7 @@ export function LinkedInCardPreview({ text, charCount }: LinkedInCardPreviewProp
             <div className={`fold-indicator-box ${expanded ? 'expanded' : 'collapsed'}`}>
               <div className="fold-line" />
               <span className="fold-tag">
-                {expanded ? '▲ Past the 210-character mobile fold' : '▼ Mobile cutoff boundary (~210 chars)'}
+                {expanded ? '▲ Past the 220-character mobile fold' : '▼ Mobile cutoff boundary (~220 chars)'}
               </span>
             </div>
           )}

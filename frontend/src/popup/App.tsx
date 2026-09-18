@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   STYLE_OPTIONS,
   BULLET_STYLES,
@@ -18,15 +18,24 @@ import {
   deleteTemplate,
   loadSavedTheme,
   saveTheme,
-  syncThemeFromCloud
+  syncThemeFromCloud,
+  saveDraft,
+  loadDrafts,
+  deleteDraft,
+  loadHashtagSets,
+  saveHashtagSet,
+  deleteHashtagSet,
+  type DraftItem,
 } from '../shared/storage';
-import { DEFAULT_TEMPLATES, TemplateItem, maxTemplates } from '../shared/constants';
+import { DEFAULT_TEMPLATES, DEFAULT_HASHTAG_SETS, TemplateItem, HashtagSet, maxTemplates } from '../shared/constants';
+import { canUse, getFeature } from '../shared/pro';
 import { FaLinkedin } from 'react-icons/fa6';
 import {
   Sparkles,
   Copy,
   Check,
-
+  Clock,
+  Hash,
   RotateCcw,
   Sun,
   Moon,
@@ -36,11 +45,22 @@ import {
   PenLine,
   Bookmark,
   X,
-  Send
+  Send,
+  ChevronDown,
+  ChevronUp,
+  SmilePlus,
 } from 'lucide-react';
 import { LinkedInCardPreview } from './components/LinkedInCardPreview';
 
-type TabType = 'compose' | 'preview' | 'templates';
+type TabType = 'compose' | 'preview' | 'templates' | 'hashtags';
+
+// Emoji data organized by category
+const EMOJI_CATEGORIES: Record<string, string[]> = {
+  'Business': ['🚀','💡','📈','💼','🎯','✅','⚡','🔥','🏆','💪','🎓','🌍','💰','🤝','📊','📣'],
+  'Celebrate': ['🎉','🙌','👏','🥳','🎊','🏅','⭐','✨','🌟','🎈','💫','🎁','🥂','🎤','👑','🌈'],
+  'Ideas': ['💭','🔑','📌','🧠','🔍','📝','🗺️','🌱','🦋','🔓','💬','🗣️','🎨','🧩','⚙️','🔗'],
+  'Numbers': ['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟','➡️','◾','🔹','🔸','▶️','•'],
+};
 
 export function App() {
   const [text, setText] = useState<string>(
@@ -62,6 +82,21 @@ export function App() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [insertErrorDetails, setInsertErrorDetails] = useState<string | null>(null);
   const [hasCopied, setHasCopied] = useState<boolean>(false);
+
+  // Post History
+  const [drafts, setDrafts] = useState<DraftItem[]>([]);
+  const [showHistory, setShowHistory] = useState<boolean>(false);
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Hashtag Manager
+  const [hashtagSets, setHashtagSets] = useState<HashtagSet[]>(DEFAULT_HASHTAG_SETS);
+  const [showNewHashtagForm, setShowNewHashtagForm] = useState<boolean>(false);
+  const [newHashtagName, setNewHashtagName] = useState<string>('');
+  const [newHashtagTags, setNewHashtagTags] = useState<string>('');
+
+  // Emoji Picker
+  const [showEmojiPanel, setShowEmojiPanel] = useState<boolean>(false);
+  const [activeEmojiCat, setActiveEmojiCat] = useState<string>('Business');
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const lastSelectionRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 });
@@ -96,6 +131,8 @@ export function App() {
 
     void initTemplates();
     void loadComposerText();
+    void initDrafts();
+    void initHashtagSets();
   }, []);
 
   // Listen for text from LinkedIn content script iframe and insertion results
@@ -123,6 +160,18 @@ export function App() {
 
   const stats = useMemo(() => calculatePostStats(text), [text]);
 
+  // ── 2-second debounced auto-save ─────────────────────────────────────────
+  useEffect(() => {
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = setTimeout(async () => {
+      await saveDraft(text);
+      setDrafts(await loadDrafts());
+    }, 2000);
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    };
+  }, [text]);
+
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => {
@@ -149,6 +198,91 @@ export function App() {
     const loaded = await loadTemplates();
     setTemplates(loaded.length > 0 ? loaded : DEFAULT_TEMPLATES);
   }
+
+  async function initDrafts() {
+    const loaded = await loadDrafts();
+    setDrafts(loaded);
+  }
+
+  async function initHashtagSets() {
+    const loaded = await loadHashtagSets();
+    setHashtagSets(loaded.length > 0 ? loaded : DEFAULT_HASHTAG_SETS);
+  }
+
+  // ── Draft / History Handlers ──────────────────────────────────────────────
+  const handleLoadDraft = (draft: DraftItem) => {
+    setText(draft.text);
+    setShowHistory(false);
+    setActiveTab('compose');
+    showToast('Draft loaded! ✍️');
+  };
+
+  const handleDeleteDraft = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const next = await deleteDraft(id);
+    setDrafts(next);
+    showToast('Draft removed');
+  };
+
+  const formatDraftTime = (savedAt: number): string => {
+    const diff = Date.now() - savedAt;
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    return `${Math.floor(hrs / 24)}d ago`;
+  };
+
+  // ── Emoji Picker Handler ──────────────────────────────────────────────────
+  const handleInsertEmoji = (emoji: string) => {
+    const textarea = textareaRef.current;
+    const start = textarea ? textarea.selectionStart : lastSelectionRef.current.start;
+    const end = textarea ? textarea.selectionEnd : lastSelectionRef.current.end;
+    const next = text.slice(0, start) + emoji + text.slice(end);
+    setText(next);
+    const newPos = start + emoji.length;
+    lastSelectionRef.current = { start: newPos, end: newPos };
+    requestAnimationFrame(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        textareaRef.current.setSelectionRange(newPos, newPos);
+      }
+    });
+  };
+
+  // ── Hashtag Manager Handlers ──────────────────────────────────────────────
+  const handleAppendHashtags = (set: HashtagSet) => {
+    const tagsStr = '\n\n' + set.tags.join(' ');
+    setText((prev) => prev + tagsStr);
+    setActiveTab('compose');
+    showToast(`Added ${set.tags.length} hashtags from "${set.name}" \uD83C\uDFF7\uFE0F`);
+  };
+
+  const handleSaveHashtagSet = async () => {
+    if (!newHashtagName.trim()) { showToast('Give your set a name first'); return; }
+    if (!newHashtagTags.trim()) { showToast('Enter at least one hashtag'); return; }
+    const rawTags = newHashtagTags.split(/[,\s]+/).filter(Boolean);
+    const normalized = rawTags.map((t) => t.startsWith('#') ? t : `#${t}`);
+    const newSet: HashtagSet = {
+      id: `hs-${Date.now()}`,
+      name: newHashtagName.trim(),
+      tags: normalized,
+    };
+    const next = await saveHashtagSet(newSet);
+    setHashtagSets(next);
+    setNewHashtagName('');
+    setNewHashtagTags('');
+    setShowNewHashtagForm(false);
+    showToast('Hashtag set saved! 🏷️');
+  };
+
+  const handleDeleteHashtagSet = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const next = await deleteHashtagSet(id);
+    setHashtagSets(next);
+    showToast('Hashtag set removed');
+  };
 
   // Handle formatting application (selection-aware)
   const applyStyle = (styleKey: StyleKey) => {
@@ -272,35 +406,78 @@ export function App() {
       showToast('Nothing to insert — write your post first!');
       return;
     }
+    // Snapshot text IMMEDIATELY — avoids any stale-closure risk with async tab queries
+    const textToInsert = text;
     setInsertErrorDetails(null);
 
     if (embedded) {
-      // Running as embedded iframe inside LinkedIn — postMessage to parent content script
-      window.parent.postMessage({ type: 'insert-to-linkedin', text }, '*');
-    } else {
-      // Running as a standalone popup — send message to the active tab's content script
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        const tabId = tabs[0]?.id;
-        if (typeof tabId !== 'number') {
-          showToast('Could not find LinkedIn tab');
-          return;
-        }
-        chrome.tabs.sendMessage(tabId, { type: 'insert-to-linkedin', text }, { frameId: 0 }, (response) => {
-          if (chrome.runtime.lastError) {
-            const err = chrome.runtime.lastError.message || 'Open LinkedIn first, then try again';
-            setInsertErrorDetails(`Extension connection error: ${err}`);
-            showToast('Connection error — see details below');
-          } else if (response?.success) {
-            setInsertErrorDetails(null);
-            showToast('Inserted into LinkedIn composer! 🚀');
-          } else {
-            const err = response?.error || 'Please open LinkedIn "Create a post" first';
-            setInsertErrorDetails(err);
-            showToast('Autofill failed — see error details below');
-          }
+      // ── Embedded iframe path ──────────────────────────────────────────────
+      // The formatter panel is injected into the LinkedIn tab itself.
+      // LinkedIn tab IS focused → postMessage works, "Start a post" click works.
+      window.parent.postMessage({ type: 'insert-to-linkedin', text: textToInsert }, '*');
+      return;
+    }
+
+    // ── Standalone popup path ─────────────────────────────────────────────────
+    // The extension popup is its own window. While it's open, the LinkedIn tab is
+    // in the background and won't respond to synthetic DOM clicks (e.g. "Start a post").
+    // Fix: resolve the LinkedIn tab → focus its window → wait 350ms → send insert message.
+    // Focusing LinkedIn will close this popup (Chrome default), but setTimeout and
+    // chrome API callbacks still complete even after popup closes.
+
+    const doInsertInTab = (tabId: number, windowId: number) => {
+      showToast('Switching to LinkedIn... ⚡');
+
+      // Bring LinkedIn window to the foreground so the content script can interact
+      chrome.windows.update(windowId, { focused: true }, () => {
+        chrome.tabs.update(tabId, { active: true }, () => {
+          // Wait for the tab to fully become active before inserting
+          setTimeout(() => {
+            chrome.tabs.sendMessage(
+              tabId,
+              { type: 'insert-to-linkedin', text: textToInsert },
+              { frameId: 0 },
+              (response) => {
+                if (chrome.runtime.lastError) {
+                  // Popup may be closed by now — silently ignore
+                  return;
+                }
+                if (response?.success) {
+                  // Popup may be closed — nothing to do, user sees result in LinkedIn
+                  return;
+                }
+                // If popup is still alive, show the error
+                try {
+                  const err = response?.error || 'Please open LinkedIn "Create a post" first';
+                  setInsertErrorDetails(err);
+                  showToast('Autofill failed — see error details below');
+                } catch {
+                  // popup already unmounted
+                }
+              }
+            );
+          }, 350);
         });
       });
-    }
+    };
+
+    // Find the LinkedIn tab: prefer the last-focused window's active tab,
+    // fall back to any open LinkedIn tab across all windows.
+    chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
+      const tab = tabs[0];
+      if (tab?.id != null && (tab.url || '').includes('linkedin.com')) {
+        doInsertInTab(tab.id, tab.windowId);
+      } else {
+        chrome.tabs.query({ url: '*://*.linkedin.com/*' }, (liTabs) => {
+          const liTab = liTabs[0];
+          if (!liTab?.id) {
+            showToast('Open LinkedIn in a browser tab first!');
+            return;
+          }
+          doInsertInTab(liTab.id, liTab.windowId);
+        });
+      }
+    });
   };
 
   // Close handler (embedded iframe or popup window)
@@ -343,11 +520,16 @@ export function App() {
   };
 
   // Filter templates by category
-  const categories = ['All', 'Framework', 'Story', 'Opinion', 'Launch', 'Custom'];
+  const categories = ['All', 'Framework', 'Story', 'Opinion', 'Launch', 'Marketing', 'HR', 'Finance', 'Startup', 'Personal', 'Custom'];
   const filteredTemplates = templates.filter((t) => {
     if (selectedCategory === 'All') return true;
     return t.category === selectedCategory;
   });
+
+  // Char limit bar helpers
+  const LINKEDIN_CHAR_LIMIT = 3000;
+  const charPct = Math.min((stats.charCount / LINKEDIN_CHAR_LIMIT) * 100, 100);
+  const charColor = stats.charCount > 2800 ? 'red' : stats.charCount > 2000 ? 'amber' : '';
 
   return (
     <div className={`app-shell ${embedded ? 'embedded' : ''}`}>
@@ -372,7 +554,40 @@ export function App() {
           </div>
         </div>
 
-        <div className="header-right">
+        <div className="header-right" style={{position:'relative'}}>
+          {/* History Button */}
+          <div className="history-dropdown-wrapper">
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={() => setShowHistory(!showHistory)}
+              title={`Post History (${drafts.length} saved)`}
+              style={{position:'relative'}}
+            >
+              <Clock size={16} />
+              {drafts.length > 0 && <span style={{fontSize:'9px',fontWeight:700,position:'absolute',top:2,right:2,background:'#0a66c2',color:'#fff',borderRadius:'50%',width:12,height:12,display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1}}>{drafts.length}</span>}
+            </button>
+            {showHistory && (
+              <div className="history-popover">
+                <div className="history-popover-header">
+                  <span className="history-popover-title">📋 Recent Drafts</span>
+                  <button type="button" className="icon-btn" style={{padding:'2px'}} onClick={() => setShowHistory(false)}><X size={13}/></button>
+                </div>
+                {drafts.length === 0
+                  ? <div className="history-empty">No drafts yet.<br/>Start writing — auto-saves every 2s!</div>
+                  : drafts.map((draft) => (
+                    <div key={draft.id} className="history-draft-item" onClick={() => handleLoadDraft(draft)}>
+                      <div className="history-draft-content">
+                        <div className="history-draft-preview">{draft.preview}</div>
+                        <div className="history-draft-time">{formatDraftTime(draft.savedAt)}</div>
+                      </div>
+                      <button type="button" className="history-draft-delete" onClick={(e) => handleDeleteDraft(draft.id, e)}><Trash2 size={12}/></button>
+                    </div>
+                  ))
+                }
+              </div>
+            )}
+          </div>
           <button
             type="button"
             className="icon-btn"
@@ -472,6 +687,14 @@ export function App() {
           <Bookmark size={15} />
           <span>Templates</span>
         </button>
+        <button
+          type="button"
+          className={`tab-btn ${activeTab === 'hashtags' ? 'active' : ''}`}
+          onClick={() => setActiveTab('hashtags')}
+        >
+          <Hash size={15} />
+          <span># Tags</span>
+        </button>
       </nav>
 
       {/* TAB 1: COMPOSE & FORMAT */}
@@ -507,9 +730,19 @@ export function App() {
 
             {/* Live Metrics Row */}
             <div className="metrics-row">
-              <div className="metric-chip">
-                <span className="metric-value">{stats.charCount}</span>
-                <span className="metric-name">chars</span>
+              {/* Character Limit Bar */}
+              <div className="char-limit-bar-wrapper" title={`${stats.charCount} / ${LINKEDIN_CHAR_LIMIT} LinkedIn character limit`}>
+                <div className="char-limit-bar">
+                  <div
+                    className={`char-limit-fill ${charColor}`}
+                    style={{ width: `${charPct}%` }}
+                  />
+                </div>
+                <span className={`char-limit-count ${charColor}`}>
+                  {stats.charCount >= LINKEDIN_CHAR_LIMIT
+                    ? `+${stats.charCount - LINKEDIN_CHAR_LIMIT} over!`
+                    : `${stats.charCount}/${LINKEDIN_CHAR_LIMIT}`}
+                </span>
               </div>
               <div className="metric-chip">
                 <span className="metric-value">{stats.wordCount}</span>
@@ -521,12 +754,12 @@ export function App() {
               </div>
 
               {stats.isPastSeeMore ? (
-                <div className="hook-status-badge warning" title={`LinkedIn shows "see more" after ~220 chars or 5+ lines`}>
-                  ⚠️ Past "See more" fold ({stats.charCount}/{stats.SEE_MORE_CHAR_LIMIT})
+                <div className="hook-status-badge warning" title={`LinkedIn shows "see more" after ~${stats.SEE_MORE_CHAR_LIMIT} chars or 5+ lines`}>
+                  ⚠️ Past fold
                 </div>
               ) : (
                 <div className="hook-status-badge success" title="Entire post fits above the LinkedIn fold">
-                  ✅ Fits above fold
+                  ✅ Above fold
                 </div>
               )}
             </div>
@@ -607,6 +840,30 @@ export function App() {
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* Emoji Picker */}
+            <div className="emoji-section">
+              <div className="emoji-section-header">
+                <span className="toolbar-heading" style={{marginBottom:0}}><SmilePlus size={13} style={{verticalAlign:'middle',marginRight:4}}/>Emojis</span>
+                <button type="button" className="emoji-toggle-btn" onClick={() => setShowEmojiPanel(!showEmojiPanel)}>
+                  {showEmojiPanel ? 'Hide' : 'Show'}
+                </button>
+              </div>
+              {showEmojiPanel && (
+                <div className="emoji-panel">
+                  <div className="emoji-category-tabs">
+                    {Object.keys(EMOJI_CATEGORIES).map((cat) => (
+                      <button key={cat} type="button" className={`emoji-cat-btn ${activeEmojiCat === cat ? 'active' : ''}`} onClick={() => setActiveEmojiCat(cat)}>{cat}</button>
+                    ))}
+                  </div>
+                  <div className="emoji-grid">
+                    {EMOJI_CATEGORIES[activeEmojiCat].map((emoji, i) => (
+                      <button key={i} type="button" className="emoji-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => handleInsertEmoji(emoji)} title={`Insert ${emoji}`}>{emoji}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </main>
@@ -724,6 +981,70 @@ export function App() {
           </div>
         </main>
       )}
+      {/* TAB 4: HASHTAG MANAGER */}
+      {activeTab === 'hashtags' && (
+        <main className="tab-content">
+          {canUse('hashtags') ? (
+            <div className="hashtag-section">
+              <div className="hashtag-section-header">
+                <div>
+                  <h2 className="section-title"># Hashtag Sets</h2>
+                  <p className="section-desc">Save sets — append to post with one click</p>
+                </div>
+                <button
+                  type="button"
+                  className="save-template-trigger-btn"
+                  onClick={() => setShowNewHashtagForm(!showNewHashtagForm)}
+                >
+                  {showNewHashtagForm ? <><X size={13}/> <span>Cancel</span></> : <><Plus size={14}/> <span>New Set</span></>}
+                </button>
+              </div>
+              {showNewHashtagForm && (
+                <div className="hashtag-new-form">
+                  <input
+                    type="text"
+                    placeholder="Set name (e.g. Tech & AI)"
+                    value={newHashtagName}
+                    onChange={(e) => setNewHashtagName(e.target.value)}
+                    maxLength={40}
+                  />
+                  <textarea
+                    placeholder={'Add hashtags, comma or space separated...\ne.g. AI, Tech, Innovation'}
+                    value={newHashtagTags}
+                    onChange={(e) => setNewHashtagTags(e.target.value)}
+                  />
+                  <span className="hashtag-hint">Tags without # are auto-prefixed</span>
+                  <div className="save-modal-actions">
+                    <button type="button" className="btn-cancel" onClick={() => { setShowNewHashtagForm(false); setNewHashtagName(''); setNewHashtagTags(''); }}>Cancel</button>
+                    <button type="button" className="btn-confirm" onClick={handleSaveHashtagSet}>Save Set</button>
+                  </div>
+                </div>
+              )}
+              {hashtagSets.map((set) => (
+                <div key={set.id} className="hashtag-set-card">
+                  <div className="hashtag-set-top">
+                    <span className="hashtag-set-name">{set.name}</span>
+                    <div className="hashtag-set-actions">
+                      <button type="button" className="hashtag-append-btn" onClick={() => handleAppendHashtags(set)}>+ Append</button>
+                      <button type="button" className="hashtag-delete-btn" onClick={(e) => handleDeleteHashtagSet(set.id, e)} title="Delete set"><Trash2 size={13}/></button>
+                    </div>
+                  </div>
+                  <div className="hashtag-tags-row">
+                    {set.tags.map((tag) => <span key={tag} className="hashtag-tag-chip">{tag}</span>)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="pro-lock-card">
+              <div className="pro-lock-icon">🔒</div>
+              <div className="pro-lock-title">Hashtag Manager is a Pro Feature</div>
+              <div className="pro-lock-desc">Save hashtag sets and append to posts with one click.</div>
+              <button type="button" className="pro-upgrade-btn">⭐ Upgrade to Pro</button>
+            </div>
+          )}
+        </main>
+      )}
 
       {/* Floating Bottom Primary Action Bar */}
       <footer className="footer-action-bar">
@@ -737,17 +1058,15 @@ export function App() {
           <span>{hasCopied ? 'Copied!' : 'Copy Post'}</span>
         </button>
 
-        {embedded && (
-          <button
-            type="button"
-            className="action-btn-insert"
-            onClick={handleInsertToLinkedIn}
-            title="Insert formatted post directly into LinkedIn's Create a post field"
-          >
-            <Send size={17} />
-            <span>Insert to LinkedIn</span>
-          </button>
-        )}
+        <button
+          type="button"
+          className="action-btn-insert"
+          onClick={handleInsertToLinkedIn}
+          title="Insert formatted post directly into LinkedIn's Create a post field"
+        >
+          <Send size={17} />
+          <span>Insert to LinkedIn</span>
+        </button>
       </footer>
     </div>
   );
